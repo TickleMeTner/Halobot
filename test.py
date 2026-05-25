@@ -91,6 +91,9 @@ if __name__ == "__main__":
     if parkour_matches:
         send_to_discord(parkour_matches, was_simulated=False)
     else:
-        mock_lobby = [{"name": "🏃‍♂️ [Test Room] Speed Parkour Evolved", "map": "Foundry Custom", "current_players": 0, "max_players": 16}]
-        send_to_discord(mock_lobby, was_simulated=True)
+        # No parkour lobbies found. 
+        # Clean up the previous message (if one exists) and stay silent.
+        print("🔍 No parkour lobbies active. Clearing board.")
+        delete_previous_ping()
+        
     print("=== SWEEP COMPLETE ===")
