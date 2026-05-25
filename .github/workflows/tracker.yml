@@ -2,10 +2,10 @@ name: Run Halo Tracker Bot
 
 on:
   schedule:
-    # This instructs GitHub to automatically wake up and run your code every 10 minutes
-    - cron: '*/10 * * * *'
+    # Changed from '*/10 * * * *' to run every 20 minutes
+    - cron: '*/20 * * * *'
   workflow_dispatch:
-    # This adds a manual "Run Now" button inside your GitHub web dashboard
+    # This keeps your manual "Run Workflow" button active in the Actions dashboard
 
 jobs:
   sweep-and-ping:
