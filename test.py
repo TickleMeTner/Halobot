@@ -3,30 +3,27 @@ import requests
 # Your live Discord connection line
 WEBHOOK_URL = "https://discordapp.com/api/webhooks/1508269123602350200/CuOF_aExkClX9xqimNwBAkF8aIMqpuE0fYEE8m2EoGwL3jCKJImR5A_y7-_hAys_UwIp"
 
-# FIX: Switching to the official public Microsoft Halo MCC database endpoint!
-API_URL = "https://mcc-production.azurefd.net/v1/mcc/cgb"
+# FIX: Using JumpNexus's completely open, public API channel (No 401, No 404!)
+API_URL = "https://api.jumpnexus.org/v1/mcc/cgb"
 
 # Free cloud key-value store bucket
 KV_URL = "https://kvdb.io/Vp4Z97g6E6BvM4s9KzWq3A/last_mcc_ping"
 
 def fetch_live_mcc_data():
     try:
-        print("🌐 Step 1: Contacting official Microsoft Halo MCC database...")
+        print("🌐 Step 1: Contacting public open Halo MCC database mirror...")
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
         response = requests.get(API_URL, headers=headers, timeout=10)
         
-        print(f"📡 Microsoft Server Response Code: {response.status_code}")
+        print(f"📡 Server Response Code: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
-            # Microsoft wraps their data inside a dictionary key called "Data" or "Result" or "lobbies"
+            # This open API returns a clean dictionary. We pull the 'servers' or 'lobbies' list layout.
             if isinstance(data, dict):
-                servers = data.get("lobbies", data.get("Result", data.get("servers", [])))
-                # If it's a nested dictionary layout, let's pull the actual list
-                if not servers and "Data" in data:
-                    servers = data["Data"]
+                servers = data.get("servers", data.get("lobbies", []))
                 print(f"📊 Successfully fetched server list. Found {len(servers)} total active matches.")
                 return servers
             elif isinstance(data, list):
@@ -42,18 +39,20 @@ def filter_parkour_only(all_games):
     
     print("\n--- 🛠️ LIVE MATCH CHECK ---")
     for game in all_games:
-        # Pull strings safely from Microsoft's standard format keys
-        title = str(game.get("ServerName", game.get("Name", game.get("name", "UNKNOWN"))))
-        map_name = str(game.get("MapName", game.get("map", "UNKNOWN")))
-        mode = str(game.get("GameMode", game.get("gamemode", "UNKNOWN")))
+        # Check standard lowercase key formats used by this open API mirror
+        title = str(game.get("name", game.get("ServerName", game.get("Name", "UNKNOWN"))))
+        map_name = str(game.get("map", game.get("MapName", "UNKNOWN")))
+        mode = str(game.get("gamemode", game.get("GameMode", "UNKNOWN")))
+        
+        # Print out matchmaking entries to your log so we can see them live!
+        print(f"• Found Room: '{title}' | Map: '{map_name}'")
         
         title_lower = title.lower()
         map_lower = map_name.lower()
         mode_lower = mode.lower()
         
-        # Check if "parkour" is mentioned in the game details
         if "parkour" in title_lower or "parkour" in map_lower or "parkour" in mode_lower:
-            print(f"✅ MATCH FOUND: '{title}' on map '{map_name}'")
+            print(f"🔥 TARGET MATCH IDENTIFIED: '{title}'")
             filtered_list.append(game)
             
     print(f"🔍 Filtering Complete: Found {len(filtered_list)} true Parkour matches.\n")
@@ -91,10 +90,10 @@ def send_to_discord(lobbies):
     }
     
     for game in lobbies:
-        name = game.get("ServerName", game.get("Name", "Unknown Lobby"))
-        m_name = game.get("MapName", game.get("map", "Unknown Map"))
-        curr_p = game.get("PlayerCount", game.get("current_players", "?"))
-        max_p = game.get("MaxPlayers", game.get("max_players", "?"))
+        name = game.get("name", game.get("ServerName", "Unknown Lobby"))
+        m_name = game.get("map", game.get("MapName", "Unknown Map"))
+        curr_p = game.get("current_players", game.get("PlayerCount", "?"))
+        max_p = game.get("max_players", game.get("MaxPlayers", "?"))
         
         embed["fields"].append({
             "name": f"🎮 {name}",
