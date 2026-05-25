@@ -1,0 +1,26 @@
+name: Run Halo Tracker Bot
+
+on:
+  schedule:
+    # This instructs GitHub to automatically wake up and run your code every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    # This adds a manual "Run Now" button inside your GitHub web dashboard
+
+jobs:
+  sweep-and-ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy project code into cloud container
+        uses: actions/checkout@v4
+
+      - name: Initialize Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Network Core Tools
+        run: pip install requests
+
+      - name: Fire Tracker Script
+        run: python test.py
