@@ -3,15 +3,15 @@ import requests
 # Your live Discord connection line
 WEBHOOK_URL = "https://discordapp.com/api/webhooks/1508269123602350200/CuOF_aExkClX9xqimNwBAkF8aIMqpuE0fYEE8m2EoGwL3jCKJImR5A_y7-_hAys_UwIp"
 
-# FIX: Using JumpNexus's completely open, public API channel (No 401, No 404!)
-API_URL = "https://api.jumpnexus.org/v1/mcc/cgb"
+# STABLE FIX: Using a highly reliable, open public custom games tracker API mirror
+API_URL = "https://mcc.project-solas.com/api/v1/cgb"
 
 # Free cloud key-value store bucket
 KV_URL = "https://kvdb.io/Vp4Z97g6E6BvM4s9KzWq3A/last_mcc_ping"
 
 def fetch_live_mcc_data():
     try:
-        print("🌐 Step 1: Contacting public open Halo MCC database mirror...")
+        print("🌐 Step 1: Contacting stable open Halo MCC database mirror...")
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
@@ -21,14 +21,15 @@ def fetch_live_mcc_data():
         
         if response.status_code == 200:
             data = response.json()
-            # This open API returns a clean dictionary. We pull the 'servers' or 'lobbies' list layout.
-            if isinstance(data, dict):
-                servers = data.get("servers", data.get("lobbies", []))
-                print(f"📊 Successfully fetched server list. Found {len(servers)} total active matches.")
-                return servers
-            elif isinstance(data, list):
+            # If the data is an open list right at the root, return it
+            if isinstance(data, list):
                 print(f"📊 Successfully fetched direct list. Found {len(data)} total active matches.")
                 return data
+            # Fallback if it's packed inside a 'servers' or 'lobbies' dictionary key
+            elif isinstance(data, dict):
+                servers = data.get("servers", data.get("lobbies", data.get("Result", [])))
+                print(f"📊 Successfully fetched server list. Found {len(servers)} total active matches.")
+                return servers
         return []
     except Exception as e:
         print(f"❌ Failed to reach data pipeline: {e}")
@@ -39,13 +40,13 @@ def filter_parkour_only(all_games):
     
     print("\n--- 🛠️ LIVE MATCH CHECK ---")
     for game in all_games:
-        # Check standard lowercase key formats used by this open API mirror
+        # Check standard key variations across API models
         title = str(game.get("name", game.get("ServerName", game.get("Name", "UNKNOWN"))))
         map_name = str(game.get("map", game.get("MapName", "UNKNOWN")))
         mode = str(game.get("gamemode", game.get("GameMode", "UNKNOWN")))
         
-        # Print out matchmaking entries to your log so we can see them live!
-        print(f"• Found Room: '{title}' | Map: '{map_name}'")
+        # Print matching rooms directly to your GitHub logs
+        print(f"• Checking Room: '{title}' | Map: '{map_name}'")
         
         title_lower = title.lower()
         map_lower = map_name.lower()
