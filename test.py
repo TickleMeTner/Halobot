@@ -91,9 +91,20 @@ if __name__ == "__main__":
     if parkour_matches:
         send_to_discord(parkour_matches, was_simulated=False)
     else:
-        # No parkour lobbies found. 
-        # Clean up the previous message (if one exists) and stay silent.
-        print("🔍 No parkour lobbies active. Clearing board.")
+        # No parkour lobbies found. Update status to notify that the bot is alive.
+        print("🔍 No parkour lobbies active. Posting status update.")
+        
+        # We delete the old message so the new "empty" one is always the latest
         delete_previous_ping()
+        
+        # Send a "No Lobbies" status update
+        empty_embed = {
+            "title": "🏃‍♂️ No Parkour Lobbies",
+            "description": "No live parkour lobbies are active at the moment. Checking again in 10 minutes!",
+            "color": 16711680 # Red color for empty
+        }
+        payload = {"username": "Halo Parkour Tracker", "embeds": [empty_embed]}
+        response = requests.post(f"{WEBHOOK_URL}?wait=true", json=payload)
+        save_new_ping_id(response)
         
     print("=== SWEEP COMPLETE ===")
