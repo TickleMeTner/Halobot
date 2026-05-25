@@ -1,14 +1,25 @@
 import requests
 
+# Your live Discord connection line
 WEBHOOK_URL = "https://discordapp.com/api/webhooks/1508269123602350200/CuOF_aExkClX9xqimNwBAkF8aIMqpuE0fYEE8m2EoGwL3jCKJImR5A_y7-_hAys_UwIp"
+# The direct backend JSON stream discovered from your network tab
 API_URL = "https://backend.jumpnexus.org:8445/site/cgbdata"
+# Free cloud key-value store bucket
 KV_URL = "https://kvdb.io/Vp4Z97g6E6BvM4s9KzWq3A/last_mcc_ping"
 
 def fetch_live_mcc_data():
     try:
         print("🌐 Step 1: Contacting live Halo MCC database...")
-        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+        
+        # FIX: Added a realistic browser User-Agent so the server doesn't filter out our request
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
         response = requests.get(API_URL, headers=headers, timeout=10)
+        
+        # DIAGNOSTIC: Let's see the exact response code (200 = Success, 403/404 = Blocked/Error)
+        print(f"📡 Server Response Code: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
@@ -16,7 +27,12 @@ def fetch_live_mcc_data():
                 print(f"📊 Successfully fetched raw server list. Found {len(data)} total active matches.")
                 return data
             if isinstance(data, dict):
-                return data.get("servers", data.get("lobbies", []))
+                servers = data.get("servers", data.get("lobbies", []))
+                print(f"📊 Successfully fetched dictionary server list. Found {len(servers)} total active matches.")
+                return servers
+        else:
+            print(f"⚠️ Server rejected request. Preview: {response.text[:200]}")
+            
         return []
     except Exception as e:
         print(f"❌ Failed to reach data pipeline: {e}")
@@ -27,14 +43,12 @@ def filter_parkour_only(all_games):
     
     print("\n--- 🛠️ DIAGNOSTIC LOG: ALL LIVE SERVERS FOUND ---")
     for game in all_games:
-        # Pull the title safely using multiple known keys
         title = str(game.get("Name", game.get("name", game.get("ServerName", "UNKNOWN"))))
         map_name = str(game.get("MapName", game.get("map", "UNKNOWN")))
         
-        # PRINT EVERY SINGLE SERVER NAME TO THE GITHUB ACTION LOG
+        # This will now successfully print out the items if the list isn't empty!
         print(f"• Server Name: '{title}' | Map: '{map_name}'")
         
-        # Check for our targets (case-insensitive conversion for the actual check)
         title_lower = title.lower()
         map_lower = map_name.lower()
         mode_lower = str(game.get("GameMode", game.get("gamemode", ""))).lower()
@@ -53,6 +67,7 @@ def delete_previous_ping():
         if res.status_code == 200:
             old_message_id = res.text.strip()
             if old_message_id:
+                print(f"🗑️ Removing old message (ID: {old_message_id}) from Discord...")
                 requests.delete(f"{WEBHOOK_URL}/messages/{old_message_id}", timeout=5)
     except Exception:
         pass
@@ -62,6 +77,7 @@ def save_new_ping_id(response):
         new_id = response.json().get("id")
         try:
             requests.put(KV_URL, data=str(new_id), timeout=5)
+            print(f"💾 Saved message tracking ID to cloud locker: {new_id}")
         except Exception:
             pass
 
