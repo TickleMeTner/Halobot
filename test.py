@@ -2,7 +2,7 @@ import requests
 
 # Your live Discord connection line
 WEBHOOK_URL = "https://discordapp.com/api/webhooks/1508269123602350200/CuOF_aExkClX9xqimNwBAkF8aIMqpuE0fYEE8m2EoGwL3jCKJImR5A_y7-_hAys_UwIp"
-# UPDATED: Using the direct backend JSON stream discovered from the network tab
+# The direct backend JSON stream discovered from your network tab
 API_URL = "https://backend.jumpnexus.org:8445/site/cgbdata"
 
 # Free cloud key-value store bucket
@@ -11,13 +11,22 @@ KV_URL = "https://kvdb.io/Vp4Z97g6E6BvM4s9KzWq3A/last_mcc_ping"
 def fetch_live_mcc_data():
     try:
         print("🌐 Step 1: Contacting live Halo MCC database...")
-        response = requests.get(API_URL, timeout=10)
+        # We add a standard browser Header so the request looks completely normal to their backend
+        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+        response = requests.get(API_URL, headers=headers, timeout=10)
+        
         if response.status_code == 200:
             data = response.json()
-            # If the backend returns a raw list directly, use it; otherwise fallback to 'servers' key
+            
+            # FIX: If the data is a list directly at the root, return it immediately!
             if isinstance(data, list):
+                print(f"📊 Successfully fetched raw server list. Found {len(data)} total active matches.")
                 return data
-            return data.get("servers", data.get("lobbies", []))
+                
+            # Fallback if it's packed inside a dictionary key
+            if isinstance(data, dict):
+                return data.get("servers", data.get("lobbies", []))
+                
         return []
     except Exception as e:
         print(f"❌ Failed to reach data pipeline: {e}")
@@ -26,13 +35,19 @@ def fetch_live_mcc_data():
 def filter_parkour_only(all_games):
     filtered_list = []
     for game in all_games:
-        # UPDATED: Added PascalCase fallback keys (Name, MapName, GameMode) used by the raw backend
+        # Check capitalized data tags used by Halo's engine and fallback to lowercase alternatives
         title = str(game.get("Name", game.get("name", game.get("ServerName", "")))).lower()
-        map_name = str(game.get("MapName", game.get("map", game.get("MapName", "")))).lower()
-        mode = str(game.get("GameMode", game.get("gamemode", game.get("GameMode", "")))).lower()
+        map_name = str(game.get("MapName", game.get("map", ""))).lower()
+        mode = str(game.get("GameMode", game.get("gamemode", ""))).lower()
         
-        if "parkour" in title or "parkour" in map_name or "parkour" in mode:
+        # Also look through custom gameplay tags if they exist in the raw match payload
+        tags = [str(t).lower() for t in game.get("Tags", game.get("tags", []))]
+        
+        # If the word 'parkour' shows up in the title, map name, mode, or tags—we grab it!
+        if "parkour" in title or "parkour" in map_name or "parkour" in mode or "parkour" in tags:
             filtered_list.append(game)
+            
+    print(f"🔍 Filtering Complete: Found {len(filtered_list)} true Parkour matches.")
     return filtered_list
 
 def delete_previous_ping():
@@ -59,9 +74,9 @@ def send_to_discord(lobbies, was_simulated=False):
     delete_previous_ping()
     print("🚀 Step 3: Delivering update package to Discord...")
     
-    title_text = "🏃‍♂️ Live Parkour Lobbies Found!" if not was_simulated else "⚙️ Bot Connection System Test"
-    desc_text = f"Found **{len(lobbies)}** parkour server(s) running right now." if not was_simulated else "No live parkour lobbies are online right now, so here is a test format match!"
-    color_code = 5763719 if not was_simulated else 3447003 
+    title_text = "🏃‍♂️ Live Parkour Lobbies Found!"
+    desc_text = f"Found **{len(lobbies)}** active parkour server(s) running right now."
+    color_code = 5763719 # Bright green color
     
     embed = {
         "title": title_text,
@@ -71,10 +86,13 @@ def send_to_discord(lobbies, was_simulated=False):
     }
     
     for game in lobbies:
-        # UPDATED: Ensuring proper display data keys map accurately to backend responses
         name = game.get("Name", game.get("name", game.get("ServerName", "Unknown Lobby")))
-        m_name = game.get("MapName", game.get("map", game.get("MapName", "Unknown Map")))
-        players = f"{game.get('PlayerCount', game.get('current_players', '?'))}/{game.get('MaxPlayers', game.get('max_players', '?'))}"
+        m_name = game.get("MapName", game.get("map", "Unknown Map"))
+        
+        # Read player counts based on standard API payloads
+        curr_p = game.get("PlayerCount", game.get("current_players", game.get("PlayerCount", "?")))
+        max_p = game.get("MaxPlayers", game.get("max_players", game.get("MaxPlayers", "?")))
+        players = f"{curr_p}/{max_p}"
         
         embed["fields"].append({
             "name": f"🎮 {name}",
@@ -97,11 +115,10 @@ if __name__ == "__main__":
         print("🔍 No parkour lobbies active. Posting status update.")
         delete_previous_ping()
         
-        # UPDATED: Text modified to display 20 minutes instead of 10
         empty_embed = {
             "title": "🏃‍♂️ No Parkour Lobbies",
             "description": "No live parkour lobbies are active at the moment. Checking again in 20 minutes!",
-            "color": 16711680 
+            "color": 16711680 # Red color for empty status
         }
         payload = {"username": "Halo Parkour Tracker", "embeds": [empty_embed]}
         response = requests.post(f"{WEBHOOK_URL}?wait=true", json=payload)
