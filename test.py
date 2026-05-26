@@ -1,62 +1,98 @@
 import requests
+import base64
+import zlib
+import json
 
 # Your live Discord connection line
 WEBHOOK_URL = "https://discordapp.com/api/webhooks/1508269123602350200/CuOF_aExkClX9xqimNwBAkF8aIMqpuE0fYEE8m2EoGwL3jCKJImR5A_y7-_hAys_UwIp"
 
-# STABLE FIX: Using a highly reliable, open public custom games tracker API mirror
-API_URL = "https://mcc.project-solas.com/api/v1/cgb"
+# OFFICIAL URL from Pixel's document
+API_URL = "https://mcc-production.azurefd.net/api/ServerListListMultiplayerServers"
 
 # Free cloud key-value store bucket
 KV_URL = "https://kvdb.io/Vp4Z97g6E6BvM4s9KzWq3A/last_mcc_ping"
 
 def fetch_live_mcc_data():
     try:
-        print("🌐 Step 1: Contacting stable open Halo MCC database mirror...")
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        }
-        response = requests.get(API_URL, headers=headers, timeout=10)
+        print("🌐 Step 1: Connecting directly to Xbox Live / Microsoft CGB Gateway...")
         
-        print(f"📡 Server Response Code: {response.status_code}")
+        # Payload required by Microsoft's backend blueprint
+        payload = {
+            "BuildId": "2025.08.16.178512.1-Release",
+            "MaxResults": 2000
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "MCC/1.3447.0.0 (Windows; RETAIL)"
+        }
+        
+        # Making the official POST request
+        response = requests.post(API_URL, json=payload, headers=headers, timeout=15)
+        print(f"📡 Official Microsoft Server Response Code: {response.status_code}")
         
         if response.status_code == 200:
-            data = response.json()
-            # If the data is an open list right at the root, return it
-            if isinstance(data, list):
-                print(f"📊 Successfully fetched direct list. Found {len(data)} total active matches.")
-                return data
-            # Fallback if it's packed inside a 'servers' or 'lobbies' dictionary key
-            elif isinstance(data, dict):
-                servers = data.get("servers", data.get("lobbies", data.get("Result", [])))
-                print(f"📊 Successfully fetched server list. Found {len(servers)} total active matches.")
-                return servers
+            raw_data = response.json()
+            # Navigate to the 'Games' list inside the response structure
+            games_list = raw_data.get("data", {}).get("Games", [])
+            print(f"📊 Successfully reached network. Processing {len(games_list)} encrypted server entries.")
+            return games_list
         return []
     except Exception as e:
-        print(f"❌ Failed to reach data pipeline: {e}")
+        print(f"❌ Failed to communicate with official Microsoft server: {e}")
         return []
 
-def filter_parkour_only(all_games):
+def filter_parkour_only(raw_games):
     filtered_list = []
+    print("\n--- 🛠️ DECODING & PARSING LIVE LOBBIES ---")
     
-    print("\n--- 🛠️ LIVE MATCH CHECK ---")
-    for game in all_games:
-        # Check standard key variations across API models
-        title = str(game.get("name", game.get("ServerName", game.get("Name", "UNKNOWN"))))
-        map_name = str(game.get("map", game.get("MapName", "UNKNOWN")))
-        mode = str(game.get("gamemode", game.get("GameMode", "UNKNOWN")))
-        
-        # Print matching rooms directly to your GitHub logs
-        print(f"• Checking Room: '{title}' | Map: '{map_name}'")
-        
-        title_lower = title.lower()
-        map_lower = map_name.lower()
-        mode_lower = mode.lower()
-        
-        if "parkour" in title_lower or "parkour" in map_lower or "parkour" in mode_lower:
-            print(f"🔥 TARGET MATCH IDENTIFIED: '{title}'")
-            filtered_list.append(game)
+    for item in raw_games:
+        encoded_payload = item.get("GameServerData")
+        if not encoded_payload:
+            continue
             
-    print(f"🔍 Filtering Complete: Found {len(filtered_list)} true Parkour matches.\n")
+        try:
+            # 1. Decode base64 2. Decompress Deflate raw string data
+            compressed_bytes = base64.b64decode(encoded_payload)
+            # -zlib.MAX_WBITS ignores headers to unwrap the raw deflate packet
+            decompressed_json = zlib.decompress(compressed_bytes, -zlib.MAX_WBITS)
+            game_data = json.loads(decompressed_json)
+            
+            # Extract names according to the decoded schema specification
+            title = str(game_data.get("session_name", "Custom Game"))
+            
+            # Map info is inside the playlistVariants array layout
+            variants = game_data.get("playlistVariants", {})
+            map_variants = variants.get("mapVariants", [{}])
+            map_name = str(map_variants[0].get("name", "Unknown Map"))
+            
+            game_variants = variants.get("gameVariants", [{}])
+            mode_name = str(game_variants[0].get("name", "Unknown Mode"))
+            
+            # Extract player counters
+            current_players = len(game_data.get("players", []))
+            max_players = game_data.get("max_players", 16)
+            
+            title_lower = title.lower()
+            map_lower = map_name.lower()
+            mode_lower = mode_name.lower()
+            
+            # Check for matches
+            if "parkour" in title_lower or "parkour" in map_lower or "parkour" in mode_lower:
+                print(f"🔥 MATCH FOUND: '{title}' running map '{map_name}'")
+                
+                # Format to carry cleanly into our Discord structural layout
+                filtered_list.append({
+                    "name": title,
+                    "map": map_name,
+                    "current_players": current_players,
+                    "max_players": max_players
+                })
+        except Exception:
+            # Skip invalid/corrupt packets safely
+            continue
+            
+    print(f"🔍 Filtering Complete: Identified {len(filtered_list)} active Parkour matches.\n")
     return filtered_list
 
 def delete_previous_ping():
@@ -81,24 +117,19 @@ def save_new_ping_id(response):
 
 def send_to_discord(lobbies):
     delete_previous_ping()
-    print("🚀 Step 3: Delivering update package to Discord...")
+    print("🚀 Step 3: Delivering live match summary package to Discord...")
     
     embed = {
-        "title": "🏃‍♂️ Live Parkour Lobbies Found!",
+        "title": "跑 Live Parkour Lobbies Found!",
         "description": f"Found **{len(lobbies)}** active parkour server(s) running right now.",
         "color": 5763719,
         "fields": []
     }
     
     for game in lobbies:
-        name = game.get("name", game.get("ServerName", "Unknown Lobby"))
-        m_name = game.get("map", game.get("MapName", "Unknown Map"))
-        curr_p = game.get("current_players", game.get("PlayerCount", "?"))
-        max_p = game.get("max_players", game.get("MaxPlayers", "?"))
-        
         embed["fields"].append({
-            "name": f"🎮 {name}",
-            "value": f"**Map:** {m_name} | **Players:** {curr_p}/{max_p}",
+            "name": f"🎮 {game['name']}",
+            "value": f"**Map:** {game['map']} | **Players:** {game['current_players']}/{game['max_players']}",
             "inline": False
         })
         
