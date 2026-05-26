@@ -30,11 +30,22 @@ def get_xbox_live_token(refresh_token):
             "refresh_token": refresh_token,
             "scope": "service::user.auth.xboxlive.com::MBI_SSL"
         }
-        msa_res = session.post(msa_url, data=msa_data).json()
-        access_token = msa_res.get("access_token")
+        msa_res = session.post(msa_url, data=msa_data)
         
+        if msa_res.status_code != 200:
+            print(f"❌ Failed Step A: Microsoft Server returned Status {msa_res.status_code}")
+            print(f"📄 Response details: {msa_res.text}")
+            return None
+            
+        try:
+            msa_json = msa_res.json()
+        except Exception:
+            print(f"❌ Failed Step A: Response was not JSON. Raw body: {msa_res.text}")
+            return None
+
+        access_token = msa_json.get("access_token")
         if not access_token:
-            print("❌ Failed Step A: Could not refresh Microsoft Account Token.")
+            print("❌ Failed Step A: Access token missing from response.")
             return None
 
         # --- STEP B: Exchange MSA Token for an Xbox User Token ---
@@ -48,12 +59,24 @@ def get_xbox_live_token(refresh_token):
             "RelyingParty": "http://auth.xboxlive.com",
             "TokenType": "JWT"
         }
-        xbl_res = session.post(xbl_url, json=xbl_payload).json()
-        user_token = xbl_res.get("Token")
-        user_hash = xbl_res.get("DisplayClaims", {}).get("xui", [{}])[0].get("uhs")
+        xbl_res = session.post(xbl_url, json=xbl_payload)
+        
+        if xbl_res.status_code != 200:
+            print(f"❌ Failed Step B: Xbox Live Authentication returned Status {xbl_res.status_code}")
+            print(f"📄 Response details: {xbl_res.text}")
+            return None
+
+        try:
+            xbl_json = xbl_res.json()
+        except Exception:
+            print(f"❌ Failed Step B: Response was not JSON. Raw body: {xbl_res.text}")
+            return None
+
+        user_token = xbl_json.get("Token")
+        user_hash = xbl_json.get("DisplayClaims", {}).get("xui", [{}])[0].get("uhs")
 
         if not user_token or not user_hash:
-            print("❌ Failed Step B: Could not acquire Xbox User Token.")
+            print("❌ Failed Step B: Could not acquire Xbox User Token details.")
             return None
 
         # --- STEP C: Exchange User Token for an XSTS Token ---
@@ -68,8 +91,9 @@ def get_xbox_live_token(refresh_token):
         }
         xsts_res = session.post(xsts_url, json=xsts_payload)
         
-        if xsts_res.status_code == 401:
-            print("❌ Failed Step C: XSTS Authorization denied (Check age limits or account status).")
+        if xsts_res.status_code != 200:
+            print(f"❌ Failed Step C: XSTS Authorization returned Status {xsts_res.status_code}")
+            print(f"📄 Response details: {xsts_res.text}")
             return None
             
         xsts_token = xsts_res.json().get("Token")
@@ -86,13 +110,11 @@ def get_xbox_live_token(refresh_token):
 
 def fetch_live_mcc_data():
     try:
-        # Fetch the permanent secret refresh token from GitHub Environment Secrets
         refresh_token = os.getenv("XBOX_REFRESH_TOKEN")
         if not refresh_token:
             print("❌ Error: XBOX_REFRESH_TOKEN variable is not set in GitHub Secrets.")
             return []
 
-        # Get our freshly minted legal session ticket
         auth_header_value = get_xbox_live_token(refresh_token)
         if not auth_header_value:
             print("❌ Aborting tracking sweep due to authentication failure.")
@@ -133,12 +155,10 @@ def filter_parkour_only(raw_games):
             continue
             
         try:
-            # 1. Decode base64 2. Decompress Deflate raw string data
             compressed_bytes = base64.b64decode(encoded_payload)
             decompressed_json = zlib.decompress(compressed_bytes, -zlib.MAX_WBITS)
             game_data = json.loads(decompressed_json)
             
-            # Extract names according to the decoded schema specification
             title = str(game_data.get("session_name", "Custom Game"))
             
             variants = game_data.get("playlistVariants", {})
