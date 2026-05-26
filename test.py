@@ -77,7 +77,7 @@ def get_xbox_live_token(refresh_token):
             print("❌ Failed Step C: XSTS Token missing from response.")
             return None
 
-            print("✅ Xbox Live Security Handshake Complete!")
+        print("✅ Xbox Live Security Handshake Complete!")
         return f"XBL3.0 x={user_hash};{xsts_token}"
 
     except Exception as e:
@@ -178,8 +178,8 @@ def delete_previous_ping():
             if old_message_id:
                 print(f"🗑️ Removing old message (ID: {old_message_id}) from Discord...")
                 requests.delete(f"{WEBHOOK_URL}/messages/{old_message_id}", timeout=5)
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 def save_new_ping_id(response):
     if response.status_code in [200, 201]:
